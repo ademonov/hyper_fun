@@ -1,0 +1,8 @@
+[package]
+name = "hyper_fun"
+version = "0.1.0"
+authors = ["Andrew Demonov"]
+
+[dependencies]
+hyper = "0.11"
+futures = "0.1"
