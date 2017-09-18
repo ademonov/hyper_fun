@@ -11,6 +11,11 @@ extern crate hyper;
 
 use std::io::Error as IoError;
 use std::io::ErrorKind;
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use hyper::server;
 
 struct Router {
@@ -41,18 +46,19 @@ impl server::Service for Router {
     }
 }
 
-fn server_start() -> std::thread::JoinHandle<std::result::Result<(), IoError>> {
+fn server_start(interrupt: Arc<AtomicBool>) -> std::thread::JoinHandle<std::result::Result<(), IoError>> {
     std::thread::Builder::new()
     .name(String::from("WebServer"))
     .spawn(move || {
-        use futures::Stream;
-        use std::time::Duration;
+        use futures::Stream;        
         
         let s_addr = "127.0.0.1:3000";
         info!("WebServer thread start listening {}...", s_addr);
 
         let address = s_addr.parse().unwrap();
         let backlog = 1024;
+        let tcp_keepalive = Some(Duration::from_secs(300));
+
         let net_listener = net2::TcpBuilder::new_v4().unwrap()
             //.reuse_port(true).unwrap()
             .bind(address).unwrap()
@@ -65,14 +71,18 @@ fn server_start() -> std::thread::JoinHandle<std::result::Result<(), IoError>> {
         let core_listener = tokio_core::net::TcpListener::from_listener(net_listener, &address, &handle).unwrap();        
         
         core.run(core_listener.incoming().for_each(move |(stream, socket_addr)| {
-            stream.set_keepalive(Some(Duration::from_secs(300))).unwrap();
+            stream.set_keepalive(tcp_keepalive).unwrap();
             info!("Connection from {}", socket_addr);
+            if interrupt.load(Ordering::Relaxed) {
+                info!("Webserver thread is going to shutdown...");
+                return Err(IoError::from(ErrorKind::Interrupted))
+            }
+
             hyper::server::Http::new()
                 .keep_alive(true)
                 .bind_connection(&handle, stream, socket_addr, Router::new());
-            //Ok(())
-            
-            Err(IoError::from(ErrorKind::Interrupted))
+              
+            Ok(())
         }))
     }).unwrap()
 }
@@ -111,12 +121,20 @@ fn main() {
     logger_setup();
     info!("Starting up...");  
 
-    let join_handle = server_start();
+    let interrupt_handle = Arc::new(AtomicBool::new(false));
+    let join_handle = server_start(interrupt_handle.clone());
+
+    std::thread::sleep(Duration::from_secs(10));
+    interrupt_handle.store(true, Ordering::Relaxed);
+    info!("Interrupt turned");
+    drop(std::net::TcpStream::connect("127.0.0.1:3000").unwrap());
+    info!("---");
+
     match join_handle.join().unwrap() {
-        Ok(()) => info!("Webserver thread was successfully completed"),
+        Ok(()) => info!("Webserver thread has been successfully completed"),
         Err(e) => {
             if e.kind() == ErrorKind::Interrupted { 
-                info!("Webserver thread was interrupted");
+                info!("Webserver thread has been interrupted");
             } else {
                 error!("WebServer thread raised an error: {:?}", e);
             }
