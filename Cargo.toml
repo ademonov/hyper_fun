@@ -8,5 +8,8 @@ log = "0.3"
 env_logger = "0.4"
 time = "0.1"
 
+net2 = "0.2"
+tokio-core = "0.1"
+
 hyper = "0.11"
 futures = "0.1"
