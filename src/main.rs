@@ -16,37 +16,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use hyper::server;
+pub mod router;
+use router::Router;
 
-struct Router {
-    counter: i32,
-}
-
-impl Router {
-    fn new() -> Self {
-        Self { counter: 0 }
-    }
-}
-
-impl server::Service for Router {
-    type Request = server::Request;
-    type Response = server::Response;
-    type Error = hyper::Error;
-    type Future = Box<futures::Future<Item = Self::Response, Error = Self::Error>>;
-
-    fn call(&self, _req: Self::Request) -> Self::Future {
-        //self.counter+=1;
-
-        let mut response = Self::Response::new();
-        response.set_body(self.counter.to_string());
-
-        let result = futures::future::ok(response);
-
-        Box::new(result)
-    }
-}
-
-fn server_start(interrupt: Arc<AtomicBool>) -> std::thread::JoinHandle<std::result::Result<(), IoError>> {
+fn server_start(interrupt: Arc<AtomicBool>) -> std::thread::JoinHandle<Result<(), IoError>> {
     std::thread::Builder::new()
     .name(String::from("WebServer"))
     .spawn(move || {
